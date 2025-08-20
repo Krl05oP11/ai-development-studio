@@ -1,0 +1,46 @@
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":8000"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: ai-dev-network
+
+# Rate limiting
+http:
+  middlewares:
+    rate-limit:
+      rateLimit:
+        burst: 20
+        period: 1m
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "http://localhost:3000"
+          - "http://127.0.0.1:3000"
+        accessControlAllowHeaders:
+          - "*"
+
+# Logging
+log:
+  level: INFO
+  format: json
+
+accessLog:
+  format: json

@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Frontend
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000/ws
+    depends_on:
+      - api-gateway
+    networks:
+      - ai-dev-network
+
+  # API Gateway
+  api-gateway:
+    image: traefik:v3.0
+    ports:
+      - "8000:8000"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ai-dev-network
+    labels:
+      - "traefik.enable=true"
+
+  # Model Manager Service
+  model-manager:
+    build: ./services/model-manager
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+    networks:
+      - ai-dev-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.model-manager.rule=PathPrefix(`/api/v1/models`)"
+      - "traefik.http.services.model-manager.loadbalancer.server.port=8001"
+
+  # Memory Engine Service
+  memory-engine:
+    build: ./services/memory-engine
+    environment:
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/ai_dev_studio
+      - CHROMA_PERSIST_DIR=/data/chroma
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - chroma_data:/data/chroma
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ai-dev-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory-engine.rule=PathPrefix(`/api/v1/memory`)"
+      - "traefik.http.services.memory-engine.loadbalancer.server.port=8002"
+
+  # Data Layer
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ai_dev_studio
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - ai-dev-network
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    networks:
+      - ai-dev-network
+
+  # ChromaDB para vectores
+  chroma:
+    image: chromadb/chroma:latest
+    environment:
+      - ANONYMIZED_TELEMETRY=False
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8001:8000"
+    networks:
+      - ai-dev-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+
+networks:
+  ai-dev-network:
+    driver: bridge
